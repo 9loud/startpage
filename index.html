@@ -1,513 +1,145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
-    <title>~/startpage</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="x-icon" href="favicon.ico">
+    <title>~/startpage</title>
+    <meta name="description" content="A Material 3 start page with bookmarks, search and a clock.">
+
+    <meta name="theme-color" content="#19120b" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#fff8f4" media="(prefers-color-scheme: light)">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23fe8019'/><text x='50' y='70' font-size='56' text-anchor='middle' fill='%23331a00' font-family='monospace'>~</text></svg>">
+
+    <link rel="preload" href="assets/fonts/roboto-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="css/fonts.css">
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/sys.css">
+    <link rel="stylesheet" href="css/app.css">
+
+    <script>
+        // Apply the saved theme before first paint to avoid a flash.
+        (function () {
+            try {
+                var raw = JSON.parse(localStorage.getItem('startpage.data.v2') || 'null');
+                var mode = raw && raw.settings && raw.settings.theme || 'dark';
+                if (mode === 'system') {
+                    mode = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                }
+                document.documentElement.dataset.theme = mode === 'light' ? 'light' : 'dark';
+            } catch (error) {
+                /* keep the default dark theme */
+            }
+        })();
+    </script>
 </head>
 
 <body>
-    <div class="container">
-        <div class="left-container">
-            <!-- Settings button added here -->
-            <button id="settings-button" class="top-left-link-button"></button>
-            <div class="gif">
-                <img src="cat.gif" />
-            </div>
+    <header class="app-bar">
+        <a class="app-bar__brand" href="./" aria-label="startpage">
+            <span class="app-bar__prompt" aria-hidden="true">~/</span><span class="app-bar__name">startpage</span>
+        </a>
+
+        <div class="app-bar__actions">
+            <md-filled-tonal-icon-button class="ai-button" href="https://claude.ai/new" target="_blank"
+                rel="noopener noreferrer" aria-label="Open Claude" title="Claude">
+                <span class="ai-mark">C</span>
+            </md-filled-tonal-icon-button>
+            <md-filled-tonal-icon-button class="ai-button" href="https://gemini.google.com/app" target="_blank"
+                rel="noopener noreferrer" aria-label="Open Gemini" title="Gemini">
+                <span class="ai-mark">G</span>
+            </md-filled-tonal-icon-button>
+            <md-filled-tonal-icon-button class="ai-button" href="https://chatgpt.com" target="_blank"
+                rel="noopener noreferrer" aria-label="Open ChatGPT" title="ChatGPT">
+                <span class="ai-mark ai-mark--small">AI</span>
+            </md-filled-tonal-icon-button>
+
+            <span class="app-bar__divider" aria-hidden="true"></span>
+
+            <md-icon-button id="theme-toggle" aria-label="Switch theme" title="Switch theme">
+                <md-icon data-icon="light_mode"></md-icon>
+            </md-icon-button>
+            <md-icon-button id="settings-button" aria-label="Open settings" title="Settings">
+                <md-icon data-icon="settings"></md-icon>
+            </md-icon-button>
         </div>
+    </header>
 
-        <div class="right-container">
-            <!-- Three link buttons added here -->
-            <a href="https://claude.ai/new" class="top-right-link-button button-1" target="_blank"></a>
-            <a href="https://gemini.google.com/app" class="top-right-link-button button-2" target="_blank"></a>
-            <a href="https://chatgpt.com" class="top-right-link-button button-3" target="_blank"></a>
-            <div class="datetime-container">
-                <div id="current-datetime"></div>
+    <main class="layout">
+        <figure class="hero-art">
+            <div class="hero-art__frame">
+                <img src="cat.gif" width="1000" height="1000"
+                    alt="A person sitting at a desk, petting a cat in front of a computer." fetchpriority="high">
             </div>
-            <div class="head">
-                <!-- Modified for search bar functionality -->
-                <span id="prompt-prefix">> cd ~/</span><span id="search-text"></span><span id="blinker" class="blinking">_</span>
+            <figcaption class="hero-art__caption">~/cat.gif</figcaption>
+        </figure>
+
+        <section class="content" aria-label="Start page">
+            <div class="clock">
+                <div id="clock-time" class="clock__time" aria-live="off"></div>
+                <div id="clock-date" class="clock__date"></div>
             </div>
 
-            <div class="bookmarks" id="bookmarks-container">
-                <!-- Bookmark categories will be loaded here by JavaScript -->
+            <form id="search-form" class="search" role="search" autocomplete="off">
+                <div class="search-bar">
+                    <span class="search-bar__icon" aria-hidden="true">
+                        <md-icon data-icon="search"></md-icon>
+                    </span>
+                    <input id="search-input" class="search-bar__input" type="text" name="q"
+                        placeholder="Search or enter address" aria-label="Search or enter address"
+                        aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false"
+                        spellcheck="false" autocapitalize="off" autocomplete="off">
+                    <kbd class="search-bar__hint" aria-hidden="true">↵</kbd>
+                </div>
+                <div id="search-suggestions" class="suggestions" role="listbox" aria-label="Search suggestions"
+                    hidden></div>
+            </form>
+
+            <div class="filters">
+                <md-chip-set id="bookmark-filters" aria-label="Filter bookmarks"></md-chip-set>
             </div>
+
+            <div id="bookmarks" class="bookmarks"></div>
+        </section>
+    </main>
+
+    <md-fab id="add-link-fab" size="small" aria-label="Add a bookmark" title="Add a bookmark">
+        <md-icon data-icon="add" slot="icon"></md-icon>
+    </md-fab>
+
+    <md-dialog id="settings-dialog" aria-label="Settings">
+        <div slot="headline">Settings</div>
+        <div slot="content" data-settings-content class="settings-content">
+            <md-tabs id="settings-tabs" aria-label="Settings sections">
+                <md-primary-tab active>Bookmarks</md-primary-tab>
+                <md-primary-tab>Appearance</md-primary-tab>
+                <md-primary-tab>Data</md-primary-tab>
+            </md-tabs>
         </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-button">&times;</span>
-            <h2>Edit Bookmarks</h2>
-            <div id="modal-categories">
-                <!-- Categories will be loaded here -->
-            </div>
-            <button id="add-category-button" class="modal-button">Add New Category</button>
-            <button id="save-settings-button" class="modal-button">Save Changes</button>
+        <div slot="actions">
+            <md-text-button data-settings-cancel>Cancel</md-text-button>
+            <md-filled-button data-settings-save>Save</md-filled-button>
         </div>
-    </div>
+    </md-dialog>
 
-    <script>
-        // Function to update the clock and date
-        function updateDateTime() {
-            const now = new Date();
+    <md-dialog id="confirm-dialog" type="alert" aria-label="Confirmation">
+        <div slot="headline" data-confirm-title>Are you sure?</div>
+        <div slot="content" data-confirm-message class="md-body-medium"></div>
+        <div slot="actions">
+            <md-text-button data-confirm-cancel>Cancel</md-text-button>
+            <md-filled-button data-confirm-ok>Delete</md-filled-button>
+        </div>
+    </md-dialog>
 
-            // Format time for 12-hour clock with AM/PM
-            let hours = now.getHours();
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            hours = hours % 12;
-            hours = hours ? hours : 12; // The hour '0' should be '12'
-            const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+    <div id="snackbar" class="snackbar" role="status" aria-live="polite"></div>
 
-            // Format date
-            const options = { year: 'numeric', month: 'long', day: 'numeric' };
-            const dateString = now.toLocaleDateString('en-US', options);
+    <noscript>
+        <p class="noscript">This start page uses JavaScript to load your bookmarks.</p>
+    </noscript>
 
-            document.getElementById('current-datetime').textContent = `${dateString} ${timeString}`;
-        }
-
-        // Update the clock every second
-        setInterval(updateDateTime, 1000);
-
-        // Initial call to display the time immediately
-        updateDateTime();
-
-        // Search bar functionality
-        const searchTextElement = document.getElementById('search-text');
-        const blinkerElement = document.getElementById('blinker');
-        let searchQuery = '';
-
-        // Function to validate if a string is a URL
-        function isValidUrl(string) {
-            const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
-            return urlRegex.test(string);
-        }
-
-        document.addEventListener('keydown', (event) => {
-            // Prevent default behavior for Backspace, Enter, and single character keys if modal is not open
-            if (!settingsModal.classList.contains('show')) {
-                if (event.key === 'Backspace' || event.key === 'Enter' || event.key.length === 1) {
-                    event.preventDefault();
-                }
-
-                if (event.key === 'Backspace') {
-                    searchQuery = searchQuery.slice(0, -1);
-                } else if (event.key === 'Enter') {
-                    const trimmedQuery = searchQuery.trim();
-                    if (trimmedQuery !== '') {
-                        if (isValidUrl(trimmedQuery)) {
-                            let urlToOpen = trimmedQuery;
-                            if (!urlToOpen.startsWith('http://') && !urlToOpen.startsWith('https://')) {
-                                urlToOpen = `http://${urlToOpen}`;
-                            }
-                            window.open(urlToOpen, '_blank');
-                        } else {
-                            window.open(`https://www.duckduckgo.com/search?q=${encodeURIComponent(trimmedQuery)}`, '_blank');
-                        }
-                    }
-                    searchQuery = '';
-                } else if (event.key.length === 1) {
-                    searchQuery += event.key;
-                }
-                searchTextElement.textContent = searchQuery;
-            }
-        });
-
-
-        // Initial bookmark data (example structure)
-        let bookmarksData = JSON.parse(localStorage.getItem('bookmarksData')) || [
-            {
-                title: 'learn',
-                links: [
-                    { text: 'tracker', url: 'https://najmossalahin.github.io/Task_Tracker/', starred: false },
-                    { text: 'statistics', url: 'https://www.coursera.org/learn/stanford-statistics/home/', starred: false },
-                    { text: 'python', url: 'https://www.youtube.com/playlist?list=PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU/', starred: false },
-                    { text: 'codewars', url: 'https://www.codewars.com/kata/search/python?q=&r%5B%5D=-8&beta=false&order_by=sort_date%20desc/', starred: false },
-                    { text: 'beecrowd', url: 'https://judge.beecrowd.com/', starred: false },
-                    { text: 'renshuu', url: 'https://www.renshuu.org/me', starred: false },
-                    { text: 'language', url: 'https://forvo.com/', starred: false },
-                    { text: 'kana lrn', url: 'https://najmossalahin.github.io/Ai_Kana_Learning_Tool/', starred: false },
-                    { text: 'kana quiz', url: 'https://gohoneko.neocities.org/learn/kana', starred: false },
-                    { text: 'kanji lrn', url: 'https://najmossalahin.github.io/Kanji_Tool/', starred: false },
-                    { text: 'kanji db', url: 'https://thekanjimap.com/', starred: false },
-                    { text: 'extra 2', url: 'https://najmossalahin.github.io/startpage/', starred: false },
-                    { text: 'extra 3', url: 'https://najmossalahin.github.io/startpage/', starred: false },
-                    { text: 'extra 4', url: 'https://najmossalahin.github.io/startpage/', starred: false },
-                    { text: 'extra 5', url: 'https://najmossalahin.github.io/startpage/', starred: false },
-                ]
-            },
-            {
-                title: 'dev',
-                links: [
-                    { text: 'devdocs', url: 'https://devdocs.io/', starred: false },
-                    { text: 'github', url: 'https://github.com/NajmosSalahin/', starred: false },
-                    { text: 'devtools', url: 'https://appdevtools.com/', starred: false },
-                    { text: 'rentry', url: 'https://rentry.org/', starred: false },
-                    { text: 'gist git', url: 'https://gist.github.com/', starred: false },
-                    { text: 'linkedin', url: 'https://www.linkedin.com/in/md-najmos-salahin-185106371/', starred: false },
-                    { text: 'extra 2', url: '#', starred: false },
-                    { text: 'extra 3', url: '#', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'database',
-                links: [
-                    { text: 'letterboxd', url: 'https://letterboxd.com/ChouCho_P/', starred: false },
-                    { text: 'storygraph', url: 'https://app.thestorygraph.com/profile/choucho_p/', starred: false },
-                    { text: 'lastfm', url: 'https://www.last.fm/user/NajAdib/', starred: false },
-                    { text: 'mangalist', url: 'https://myanimelist.net/mangalist/Naju_adib?/', starred: false },
-                    { text: 'rawg', url: 'https://rawg.io/@choucho_p/games', starred: false },
-                    { text: 'recipe', url: 'https://www.myrecipes.com/', starred: false },
-                    { text: 'dog die', url: 'https://www.doesthedogdie.com/', starred: false },
-                    { text: 'extra 3', url: '#', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'play',
-                links: [
-                    { text: 'monkeytype', url: 'https://monkeytype.com/', starred: false },
-                    { text: 'lichess', url: 'https://lichess.org/', starred: false },
-                    { text: 'bongo cat', url: 'https://bongo.cat/', starred: false },
-                    { text: 'mynoise', url: 'https://mynoise.net/', starred: false },
-                    { text: 'cat noise', url: 'https://purrli.com/', starred: false },
-                    { text: 'neal', url: 'https://neal.fun/', starred: false },
-                    { text: 'solar', url: 'https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html', starred: false },
-                    { text: 'sleepytimne', url: 'https://sleepopolis.com/calculators/sleep/', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'Unusual',
-                links: [
-                    { text: 'fmhy', url: 'https://fmhy.net/', starred: false },
-                    { text: 'the index', url: 'https://theindex.moe/', starred: false },
-                    { text: 'nyaa', url: 'https://nyaa.si/', starred: false },
-                    { text: '1337x', url: 'https://1337x.to/home/', starred: false },
-                    { text: 'rawdl', url: 'https://dl-raw.ac/', starred: false },
-                    { text: 'dl server', url: 'https://server.elscione.com/', starred: false },
-                    { text: 'z-lib', url: 'https://z-lib.gd/', starred: false },
-                    { text: 'roms', url: 'https://r-roms.github.io/', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'social',
-                links: [
-                    { text: 'reddit', url: 'https://reddit.com/', starred: false },
-                    { text: '4chan', url: 'https://4chan.org/', starred: false },
-                    { text: 'youtube', url: 'https://youtube.com/', starred: false },
-                    { text: 'animepahe', url: 'https://animepahe.ru', starred: false },
-                    { text: 'cubari', url: 'https://proxy.cubari.moe/#/', starred: false },
-                    { text: 'x', url: 'https://x.com/', starred: false },
-                    { text: 'telegram', url: 'http://web.telegram.org/', starred: false },
-                    { text: 'discord', url: 'https://discord.com/channels/981539676550750228/1237586485234892841/', starred: false },
-                    { text: 'radio', url: 'https://radio.garden/browse', starred: false },
-                    { text: 'footybite', url: 'https://www.footybite.to/', starred: false },
-                    { text: 'music', url: 'https://dab.yeet.su/', starred: false },
-                    { text: 'animethemes', url: 'https://animethemes.moe/', starred: false },
-                    { text: 'bdix', url: 'https://bdixtv24.com/live-tv/', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'tools',
-                links: [
-                    { text: 'excalidraw', url: 'https://excalidraw.com/', starred: false },
-                    { text: 'diagram', url: 'https://app.diagrams.net/', starred: false },
-                    { text: 'desmos', url: 'https://www.desmos.com/', starred: false },
-                    { text: 'gamma', url: 'https://gamma.app/create', starred: false },
-                    { text: 'colab', url: 'https://colab.research.google.com/', starred: false },
-                    { text: 'omni calc', url: 'https://www.omnicalculator.com/', starred: false },
-                    { text: 'extra 2', url: '#', starred: false },
-                    { text: 'extra 3', url: '#', starred: false },
-                    { text: 'extra 4', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            },
-            {
-                title: 'misc',
-                links: [
-                    { text: 'calendar', url: 'https://calendar.google.com/calendar/u/0', starred: false },
-                    { text: 'future me', url: 'https://www.futureme.org/', starred: false },
-                    { text: 'knowledge', url: 'https://rentry.org/the-piracy-glossary', starred: false },
-                    { text: 'link vault', url: 'https://najmossalahin.github.io/AI_Link_Vault/', starred: false },
-                    { text: 'mood track', url: 'https://najmossalahin.github.io/Zenith_Tracker/', starred: false },
-                    { text: 'virus find', url: 'https://www.virustotal.com/gui/home/upload', starred: false },
-                    { text: 'fake id', url: 'https://www.fakenamegenerator.com/', starred: false },
-                    { text: 'fake img', url: 'https://thispersondoesnotexist.com/', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                    { text: 'extra 5', url: '#', starred: false },
-                ]
-            }
-        ];
-
-        const linksPerPage = 5; // Number of links to show per page
-
-        // Function to render bookmarks
-        function renderBookmarks() {
-            const bookmarksContainer = document.getElementById('bookmarks-container');
-            bookmarksContainer.innerHTML = ''; // Clear existing bookmarks
-
-            bookmarksData.forEach(categoryData => {
-                const categoryDiv = document.createElement('div');
-                categoryDiv.classList.add('category');
-
-                const linksDiv = document.createElement('div');
-                linksDiv.classList.add('links');
-
-                const titleLi = document.createElement('li');
-                titleLi.classList.add('title');
-                titleLi.textContent = categoryData.title;
-                linksDiv.appendChild(titleLi);
-
-                // Create and store all original link elements, applying starred class if needed
-                // This map now directly creates the <li> elements with the correct <a> tags
-                categoryData.allOriginalLinks = categoryData.links.map(link => {
-                    const li = document.createElement('li');
-                    const a = document.createElement('a');
-                    a.href = link.url;
-                    a.textContent = link.text;
-                    a.target = "_blank";
-                    if (link.starred) {
-                        a.classList.add('starred-link');
-                    }
-                    li.appendChild(a);
-                    return li;
-                });
-                categoryData.currentPage = 0; // Initialize current page
-
-                // Only append the visible links based on the current page
-                const startIndex = categoryData.currentPage * linksPerPage;
-                const endIndex = startIndex + linksPerPage;
-                for (let i = startIndex; i < endIndex && i < categoryData.allOriginalLinks.length; i++) {
-                    linksDiv.appendChild(categoryData.allOriginalLinks[i]);
-                }
-
-                categoryDiv.appendChild(linksDiv);
-
-                const toggleButton = document.createElement('button');
-                toggleButton.classList.add('toggle-links-button');
-                toggleButton.textContent = '>';
-                categoryDiv.appendChild(toggleButton);
-
-                bookmarksContainer.appendChild(categoryDiv);
-
-                // Initial display of links for each category (now handled implicitly by initial append)
-                // However, the toggle button visibility needs to be handled
-                if (categoryData.allOriginalLinks.length <= linksPerPage) {
-                    toggleButton.style.display = 'none'; // Hide button if no pagination needed
-                } else {
-                    toggleButton.style.display = 'block'; // Show button if pagination is needed
-                }
-
-
-                // Add click listener to the toggle button
-                toggleButton.addEventListener('click', () => {
-                    categoryData.currentPage++; // Move to the next page
-                    // If we've gone past the last page, loop back to the first page (page 0)
-                    if (categoryData.currentPage * linksPerPage >= categoryData.allOriginalLinks.length) {
-                        categoryData.currentPage = 0;
-                    }
-                    // Re-render links for this specific category
-                    linksDiv.innerHTML = ''; // Clear existing links
-                    linksDiv.appendChild(titleLi); // Re-add the title
-
-                    const newStartIndex = categoryData.currentPage * linksPerPage;
-                    const newEndIndex = newStartIndex + linksPerPage;
-
-                    for (let i = newStartIndex; i < newEndIndex && i < categoryData.allOriginalLinks.length; i++) {
-                        const currentLi = categoryData.allOriginalLinks[i];
-                        const currentLinkData = categoryData.links[i]; // Get the actual data object
-
-                        // Ensure the 'starred-link' class is correctly applied/removed
-                        const aElement = currentLi.querySelector('a');
-                        if (aElement) {
-                            if (currentLinkData.starred) {
-                                aElement.classList.add('starred-link');
-                            } else {
-                                aElement.classList.remove('starred-link');
-                            }
-                        }
-                        linksDiv.appendChild(currentLi);
-                    }
-                });
-            });
-        }
-
-
-        // Settings Modal Logic
-        const settingsButton = document.getElementById('settings-button');
-        const settingsModal = document.getElementById('settings-modal');
-        const closeButton = settingsModal.querySelector('.close-button');
-        const modalCategoriesContainer = document.getElementById('modal-categories');
-        const addCategoryButton = document.getElementById('add-category-button');
-        const saveSettingsButton = document.getElementById('save-settings-button');
-
-        // Open modal
-        settingsButton.addEventListener('click', () => {
-            settingsModal.classList.add('show');
-            renderModalContent();
-        });
-
-        // Close modal
-        closeButton.addEventListener('click', () => {
-            settingsModal.classList.remove('show');
-        });
-
-        // Close modal when clicking outside content
-        window.addEventListener('click', (event) => {
-            if (event.target == settingsModal) {
-                settingsModal.classList.remove('show');
-            }
-        });
-
-        // Render content inside the modal
-        function renderModalContent() {
-            modalCategoriesContainer.innerHTML = ''; // Clear existing content
-
-            bookmarksData.forEach((category, categoryIndex) => {
-                const categoryDiv = document.createElement('div');
-                categoryDiv.classList.add('modal-category-item');
-                categoryDiv.dataset.categoryIndex = categoryIndex;
-
-                const categoryHeader = document.createElement('div');
-                categoryHeader.classList.add('modal-category-header');
-
-                const categoryTitleInput = document.createElement('input');
-                categoryTitleInput.type = 'text';
-                categoryTitleInput.value = category.title;
-                categoryTitleInput.classList.add('category-title-input');
-                categoryTitleInput.addEventListener('change', (e) => {
-                    category.title = e.target.value;
-                });
-                categoryHeader.appendChild(categoryTitleInput);
-
-                const deleteCategoryButton = document.createElement('button');
-                deleteCategoryButton.classList.add('delete-button');
-                deleteCategoryButton.textContent = 'Delete Category';
-                deleteCategoryButton.addEventListener('click', () => {
-                    // Use a custom confirmation dialog instead of alert()
-                    const confirmDelete = document.createElement('div');
-                    confirmDelete.classList.add('custom-confirm');
-                    confirmDelete.innerHTML = `
-                        <p>Are you sure you want to delete this category?</p>
-                        <button id="confirm-yes">Yes</button>
-                        <button id="confirm-no">No</button>
-                    `;
-                    document.body.appendChild(confirmDelete);
-
-                    document.getElementById('confirm-yes').addEventListener('click', () => {
-                        bookmarksData.splice(categoryIndex, 1);
-                        renderModalContent(); // Re-render modal after deletion
-                        document.body.removeChild(confirmDelete);
-                    });
-
-                    document.getElementById('confirm-no').addEventListener('click', () => {
-                        document.body.removeChild(confirmDelete);
-                    });
-                });
-                categoryHeader.appendChild(deleteCategoryButton);
-                categoryDiv.appendChild(categoryHeader);
-
-                const linksList = document.createElement('div');
-                linksList.classList.add('modal-links-list');
-
-                category.links.forEach((link, linkIndex) => {
-                    const linkItem = document.createElement('div');
-                    linkItem.classList.add('modal-link-item');
-
-                    // Star checkbox/button
-                    const starButton = document.createElement('button');
-                    starButton.classList.add('star-button');
-                    starButton.innerHTML = link.starred ? '★' : '☆'; // Unicode star characters
-                    starButton.title = link.starred ? 'Unstar Link' : 'Star Link';
-                    if (link.starred) {
-                        starButton.classList.add('is-starred');
-                    }
-                    starButton.addEventListener('click', () => {
-                        link.starred = !link.starred;
-                        renderModalContent(); // Re-render to update star icon
-                    });
-                    linkItem.appendChild(starButton);
-
-
-                    const linkTextInput = document.createElement('input');
-                    linkTextInput.type = 'text';
-                    linkTextInput.value = link.text;
-                    linkTextInput.placeholder = 'Link Text';
-                    linkTextInput.addEventListener('change', (e) => {
-                        link.text = e.target.value;
-                    });
-                    linkItem.appendChild(linkTextInput);
-
-                    const linkUrlInput = document.createElement('input');
-                    linkUrlInput.type = 'url';
-                    linkUrlInput.value = link.url;
-                    linkUrlInput.placeholder = 'Link URL';
-                    linkUrlInput.addEventListener('change', (e) => {
-                        link.url = e.target.value;
-                    });
-                    linkItem.appendChild(linkUrlInput);
-
-                    const deleteLinkButton = document.createElement('button');
-                    deleteLinkButton.classList.add('delete-button');
-                    deleteLinkButton.textContent = 'Delete Link';
-                    deleteLinkButton.addEventListener('click', () => {
-                        category.links.splice(linkIndex, 1);
-                        renderModalContent(); // Re-render modal after deletion
-                    });
-                    linkItem.appendChild(deleteLinkButton);
-
-                    linksList.appendChild(linkItem);
-                });
-
-                const addLinkButton = document.createElement('button');
-                addLinkButton.classList.add('add-link-button');
-                addLinkButton.textContent = 'Add Link';
-                addLinkButton.addEventListener('click', () => {
-                    category.links.push({ text: '', url: '', starred: false }); // New links are not starred by default
-                    renderModalContent(); // Re-render modal to show new link
-                });
-                linksList.appendChild(addLinkButton);
-
-                categoryDiv.appendChild(linksList);
-                modalCategoriesContainer.appendChild(categoryDiv);
-            });
-        }
-
-        // Add New Category
-        addCategoryButton.addEventListener('click', () => {
-            bookmarksData.push({ title: 'New Category', links: [{ text: '', url: '', starred: false }] });
-            renderModalContent();
-        });
-
-        // Save Settings
-        saveSettingsButton.addEventListener('click', () => {
-            // Filter out empty links and categories if desired, or handle validation
-            // For now, just save the current state
-            localStorage.setItem('bookmarksData', JSON.stringify(bookmarksData));
-            settingsModal.classList.remove('show');
-            renderBookmarks(); // Re-render main page bookmarks
-        });
-
-        // Initial render of bookmarks when the page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            renderBookmarks();
-        });
-    </script>
+    <script src="vendor/material.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 
-</html
+</html>
