@@ -1,11 +1,13 @@
 import {DEFAULT_SETTINGS, createDefaultCategories} from './defaults.js';
+import {THEME_VALUES, resolveTheme} from './themes.js';
 
 export const STORAGE_KEY = 'startpage.data.v2';
 export const LEGACY_KEY = 'bookmarksData';
 
 /** @typedef {{id: string, text: string, url: string, starred: boolean}} Link */
 /** @typedef {{id: string, title: string, links: Link[]}} Category */
-/** @typedef {{theme: 'dark'|'light'|'system', searchEngine: string, showSeconds: boolean}} Settings */
+/** @typedef {{type: 'default'|'url'|'upload', url: string, name: string}} Hero */
+/** @typedef {{theme: string, colorMode: 'dark'|'light', searchEngine: string, showSeconds: boolean, hero: Hero}} Settings */
 /** @typedef {{version: 2, settings: Settings, categories: Category[]}} StartPageState */
 
 export function uid(prefix = 'id') {
@@ -52,19 +54,41 @@ function normalizeCategory(raw) {
   };
 }
 
+/** Keeps the artwork setting in a shape the renderer understands. */
+function normalizeHero(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const name =
+    typeof source.name === 'string' ? source.name.trim().slice(0, 120) : '';
+  if (source.type === 'url') {
+    const url = safeUrl(source.url);
+    return url
+      ? {type: 'url', url, name}
+      : {type: 'default', url: '', name: ''};
+  }
+  if (source.type === 'upload') {
+    return {type: 'upload', url: '', name};
+  }
+  return {type: 'default', url: '', name: ''};
+}
+
 /** @returns {StartPageState} */
 export function normalize(raw) {
   const settings = {
     ...DEFAULT_SETTINGS,
     ...(raw?.settings && typeof raw.settings === 'object' ? raw.settings : {}),
   };
-  if (!['dark', 'light', 'system'].includes(settings.theme)) {
+  if (!THEME_VALUES.includes(settings.theme)) {
     settings.theme = DEFAULT_SETTINGS.theme;
   }
   if (!['duckduckgo', 'google', 'yandex', 'bing'].includes(settings.searchEngine)) {
     settings.searchEngine = DEFAULT_SETTINGS.searchEngine;
   }
   settings.showSeconds = Boolean(settings.showSeconds);
+  settings.hero = normalizeHero(settings.hero);
+  settings.colorMode = resolveTheme(
+    settings.theme,
+    globalThis.matchMedia?.('(prefers-color-scheme: light)')?.matches ?? false,
+  ).mode;
 
   const categories = Array.isArray(raw?.categories)
     ? raw.categories.map(normalizeCategory)
@@ -150,11 +174,14 @@ export function parseImport(text) {
 }
 
 export function exportState(state) {
+  // Uploaded artwork lives in IndexedDB, and colorMode is derived on load, so
+  // neither belongs in the portable JSON.
+  const {hero: _hero, colorMode: _mode, ...settings} = state.settings;
   return JSON.stringify(
     {
       version: 2,
       exportedAt: new Date().toISOString(),
-      settings: state.settings,
+      settings,
       categories: state.categories,
     },
     null,

@@ -23,12 +23,16 @@ report.cards = await page.locator('.category-card').count();
 report.chips = await page.locator('md-filter-chip').count();
 report.links = await page.locator('.link-row').count();
 report.theme = await page.getAttribute('html', 'data-theme');
+report.colorMode = await page.getAttribute('html', 'data-color-mode');
 report.clock = await page.locator('#clock-time').innerText();
 report.date = await page.locator('#clock-date').innerText();
 report.icons = await page.locator('md-icon svg').count();
 report.font = await page.evaluate(() =>
   getComputedStyle(document.body).fontFamily,
 );
+report.heroSrc = await page.getAttribute('#hero-image', 'src');
+report.heroCaption = await page.locator('#hero-caption').innerText();
+report.aiLoaders = await page.locator('.ai-loader').count();
 
 await page.screenshot({path: `${shots}/qa-dark-desktop.png`});
 
@@ -59,6 +63,21 @@ report.settingsOpen = await page.evaluate(
 report.settingsCategories = await page
   .locator('.settings-category')
   .count();
+report.settingsFullscreen = await page.evaluate(() => {
+  const host = document.querySelector('#settings-dialog');
+  const dialog = host.shadowRoot.querySelector('dialog');
+  const content = document.querySelector('.settings-content');
+  const rect = (element) => {
+    const box = element.getBoundingClientRect();
+    return {w: Math.round(box.width), h: Math.round(box.height)};
+  };
+  return {
+    viewport: {w: window.innerWidth, h: window.innerHeight},
+    dialog: rect(dialog),
+    content: rect(content),
+    radius: getComputedStyle(dialog).borderRadius,
+  };
+});
 await page.screenshot({path: `${shots}/qa-settings.png`});
 
 // Appearance tab
@@ -69,7 +88,52 @@ await page.waitForTimeout(300);
 report.appearanceVisible = await page
   .locator('[data-panel="1"]')
   .isVisible();
+report.themeTiles = await page.locator('.theme-tile').count();
+report.themeGroups = await page.locator('.theme-section').count();
+report.panelsScroll = await page.evaluate(() => {
+  const panels = document.querySelector('.settings-panels');
+  return {
+    client: panels.clientHeight,
+    scroll: panels.scrollHeight,
+  };
+});
 await page.screenshot({path: `${shots}/qa-settings-appearance.png`});
+
+// Preview a catalogue theme, then cancel to make sure the page reverts.
+await page.click('.theme-tile[data-theme-id="tokyo-night"]');
+await page.waitForTimeout(300);
+report.previewTheme = await page.getAttribute('html', 'data-theme');
+report.previewMode = await page.getAttribute('html', 'data-color-mode');
+report.previewSurface = await page.evaluate(() =>
+  getComputedStyle(document.documentElement)
+    .getPropertyValue('--md-sys-color-surface')
+    .trim(),
+);
+await page.screenshot({path: `${shots}/qa-theme-preview.png`});
+report.activeTile = await page
+  .locator('.theme-tile[aria-pressed="true"]')
+  .getAttribute('data-theme-id');
+
+// Artwork: link a URL, then return to the bundled GIF.
+await page.locator('.artwork').scrollIntoViewIfNeeded();
+await page.waitForTimeout(200);
+report.artworkLabel = await page.locator('.artwork__name').innerText();
+await page
+  .locator('.artwork__url input')
+  .fill('https://example.com/art.gif');
+await page.locator('md-text-button', {hasText: 'Use URL'}).click();
+await page.waitForTimeout(400);
+report.heroUrlStored = await page.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem('startpage.data.v2'));
+  return data.settings.hero;
+});
+await page.locator('md-text-button', {hasText: 'Use default'}).click();
+await page.waitForTimeout(400);
+report.heroResetStored = await page.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem('startpage.data.v2'));
+  return data.settings.hero;
+});
+report.heroResetSrc = await page.getAttribute('#hero-image', 'src');
 
 // Close via cancel
 await page.click('[data-settings-cancel]');
@@ -77,6 +141,7 @@ await page.waitForTimeout(300);
 report.settingsClosed = !(await page.evaluate(
   () => document.querySelector('#settings-dialog').open,
 ));
+report.themeAfterCancel = await page.getAttribute('html', 'data-theme');
 
 // Star the second link in the first card
 const star = page.locator('.category-card').first().locator('.link-row__star').first();
@@ -111,6 +176,7 @@ await page.screenshot({path: `${shots}/qa-light.png`});
 await page.reload({waitUntil: 'networkidle'});
 await page.waitForTimeout(300);
 report.themeAfterReload = await page.getAttribute('html', 'data-theme');
+report.modeAfterReload = await page.getAttribute('html', 'data-color-mode');
 report.starAfterReload = await page
   .locator('.link-row__star')
   .first()
@@ -136,6 +202,12 @@ report.mobileCards = await mobile.locator('.category-card').count();
 await mobile.screenshot({path: `${shots}/qa-mobile.png`, fullPage: false});
 await mobile.click('#settings-button');
 await mobile.waitForTimeout(400);
+report.mobileSettings = await mobile.evaluate(() => {
+  const content = document
+    .querySelector('.settings-content')
+    .getBoundingClientRect();
+  return [Math.round(content.width), Math.round(content.height)];
+});
 await mobile.screenshot({path: `${shots}/qa-mobile-settings.png`});
 
 // Settings: reorder a link with the arrow buttons, then save.
@@ -237,7 +309,7 @@ const importPayload = JSON.stringify({
   ],
 });
 await page
-  .locator('input[type="file"]')
+  .locator('input[type="file"][accept*="json"]')
   .setInputFiles({
     name: 'import.json',
     mimeType: 'application/json',
@@ -302,6 +374,36 @@ report.legacyMigrated = await legacyPage.evaluate(() => {
     : null;
 });
 await legacyContext.close();
+
+// System theme follows the OS preference before the first paint.
+const systemContext = await browser.newContext({
+  viewport: {width: 1200, height: 900},
+  colorScheme: 'light',
+});
+await systemContext.addInitScript(() => {
+  localStorage.setItem(
+    'startpage.data.v2',
+    JSON.stringify({
+      version: 2,
+      settings: {
+        theme: 'system',
+        searchEngine: 'duckduckgo',
+        showSeconds: false,
+      },
+      categories: [],
+    }),
+  );
+});
+const systemPage = await systemContext.newPage();
+await systemPage.goto(BASE, {waitUntil: 'networkidle'});
+await systemPage.waitForTimeout(300);
+report.systemTheme = await systemPage.getAttribute('html', 'data-theme');
+report.systemMode = await systemPage.getAttribute('html', 'data-color-mode');
+report.systemStored = await systemPage.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem('startpage.data.v2'));
+  return data.settings.colorMode;
+});
+await systemContext.close();
 
 report.errors = errors;
 console.log(JSON.stringify(report, null, 2));

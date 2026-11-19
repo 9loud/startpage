@@ -10,6 +10,8 @@ import {
   argbFromHex,
 } from '@material/material-color-utilities';
 
+import {THEMES} from '../js/themes.js';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
@@ -121,6 +123,156 @@ ${schemeTokens(false)}
 await mkdir(path.join(root, 'css'), {recursive: true});
 await writeFile(path.join(root, 'css', 'tokens.css'), tokens, 'utf8');
 console.log('✓ css/tokens.css');
+
+/* -------------------------------------------------------------------------
+   Alternate themes: derive a full M3 role set for every catalogue entry.
+   ------------------------------------------------------------------------- */
+
+/** @param {string} value */
+function rgb(value) {
+  const hexValue = value.replace('#', '');
+  return [0, 2, 4].map((offset) =>
+    parseInt(hexValue.slice(offset, offset + 2), 16),
+  );
+}
+
+/**
+ * Blends two `#rrggbb` colours in sRGB. `amount` is how much of `b` to use.
+ * @param {string} a
+ * @param {string} b
+ * @param {number} amount
+ */
+function mix(a, b, amount) {
+  const from = rgb(a);
+  const to = rgb(b);
+  const channels = from.map((channel, index) =>
+    Math.round(channel + (to[index] - channel) * amount),
+  );
+  return `#${channels
+    .map((channel) => Math.max(0, Math.min(255, channel)).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/** @param {string} value */
+function channelLuminance(channel) {
+  const srgb = channel / 255;
+  return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+/** @param {string} value */
+function luminance(value) {
+  const [r, g, b] = rgb(value).map(channelLuminance);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** @param {string} a @param {string} b */
+function contrast(a, b) {
+  const first = luminance(a);
+  const second = luminance(b);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** Black or white, whichever reads better on `background`. */
+function onColor(background) {
+  const black = contrast(background, '#000000');
+  const white = contrast(background, '#ffffff');
+  return black >= white ? '#000000' : '#ffffff';
+}
+
+/**
+ * Expands one catalogue theme into Material 3 roles. Surfaces, outlines and
+ * text come straight from the theme; the accent families are tonal palettes
+ * seeded by the theme's primary so containers stay harmonious.
+ * @param {import('../js/themes.js').Theme} theme
+ */
+function themeTokens(theme) {
+  const dark = theme.mode === 'dark';
+  const scheme = new SchemeTonalSpot(
+    Hct.fromInt(argbFromHex(theme.primary)),
+    dark,
+    0,
+  );
+  const role = (name) => hex(MaterialDynamicColors[name].getArgb(scheme));
+
+  const surface = theme.bg;
+  const container = theme.surface;
+  const text = theme.textMain;
+
+  /** @type {Record<string, string>} */
+  const tokens = {
+    primary: theme.primary,
+    'on-primary': onColor(theme.primary),
+    'primary-container': role('primaryContainer'),
+    'on-primary-container': role('onPrimaryContainer'),
+    secondary: role('secondary'),
+    'on-secondary': role('onSecondary'),
+    'secondary-container': role('secondaryContainer'),
+    'on-secondary-container': role('onSecondaryContainer'),
+    tertiary: role('tertiary'),
+    'on-tertiary': role('onTertiary'),
+    'tertiary-container': role('tertiaryContainer'),
+    'on-tertiary-container': role('onTertiaryContainer'),
+    error: role('error'),
+    'on-error': role('onError'),
+    'error-container': role('errorContainer'),
+    'on-error-container': role('onErrorContainer'),
+    background: surface,
+    'on-background': text,
+    surface,
+    'on-surface': text,
+    'surface-variant': mix(container, theme.border, 0.45),
+    'on-surface-variant': theme.textMuted,
+    'surface-dim': dark
+      ? mix(surface, container, 0.25)
+      : mix(surface, text, 0.08),
+    'surface-bright': dark
+      ? mix(container, text, 0.16)
+      : mix(container, '#ffffff', 0.55),
+    'surface-container-lowest': dark
+      ? mix(surface, '#000000', 0.18)
+      : mix(surface, '#ffffff', 0.7),
+    'surface-container-low': dark
+      ? mix(surface, container, 0.45)
+      : mix(container, '#ffffff', 0.55),
+    'surface-container': container,
+    'surface-container-high': mix(container, text, 0.06),
+    'surface-container-highest': mix(container, text, 0.11),
+    'inverse-surface': dark
+      ? mix(text, container, 0.15)
+      : mix(text, container, 0.08),
+    'inverse-on-surface': dark
+      ? mix(surface, container, 0.3)
+      : mix(container, '#ffffff', 0.4),
+    'inverse-primary': mix(theme.primary, surface, dark ? 0.3 : 0.25),
+    outline: theme.border,
+    'outline-variant': mix(theme.border, surface, 0.45),
+    shadow: '#000000',
+    scrim: '#000000',
+  };
+
+  return tokens;
+}
+
+const themeCss = THEMES.map((theme) => {
+  const declarations = Object.entries(themeTokens(theme))
+    .map(([name, value]) => `  --md-sys-color-${name}: ${value};`)
+    .join('\n');
+  return `/* ${theme.name} — ${theme.group} */\n[data-theme='${theme.id}'] {\n  color-scheme: ${theme.mode};\n${declarations}\n}`;
+}).join('\n\n');
+
+const themesFile = `/**
+ * Alternate Material 3 themes.
+ * Palette source: https://github.com/NajmosSalahin/Zenith_Tracker (MIT).
+ * Generated by tools/build.mjs from js/themes.js — do not edit by hand.
+ */
+
+${themeCss}
+`;
+
+await writeFile(path.join(root, 'css', 'themes.css'), themesFile, 'utf8');
+console.log('✓ css/themes.css');
 
 const result = await build({
   entryPoints: [path.join(here, 'vendor-entry.js')],

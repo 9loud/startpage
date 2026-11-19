@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'dark',
   searchEngine: 'duckduckgo',
   showSeconds: false,
+  hero: {type: 'default'},
 };
 
 export const SEARCH_ENGINES = {

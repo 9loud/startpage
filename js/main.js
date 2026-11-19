@@ -1,12 +1,14 @@
 import {createChips, renderBookmarks} from './bookmarks.js';
 import {icon, hydrateIcons} from './icons.js';
+import {loadHeroImage} from './media.js';
 import {createSearch} from './search.js';
 import {
   createConfirm,
   createSettings,
   createSnackbar,
 } from './settings.js';
-import {loadState, saveState} from './store.js';
+import {loadState, normalize, saveState} from './store.js';
+import {resolveTheme} from './themes.js';
 
 const state = loadState();
 
@@ -34,18 +36,12 @@ hydrateIcons(document);
 const snackbar = createSnackbar(snackbarElement);
 const confirm = createConfirm(confirmDialog);
 
-function resolvedTheme() {
-  if (state.settings.theme === 'system') {
-    return lightPreference.matches ? 'light' : 'dark';
-  }
-  return state.settings.theme;
-}
+function applyTheme(setting = state.settings.theme) {
+  const resolved = resolveTheme(setting, lightPreference.matches);
+  root.dataset.theme = resolved.id;
+  root.dataset.colorMode = resolved.mode;
 
-function applyTheme() {
-  const resolved = resolvedTheme();
-  root.dataset.theme = resolved;
-
-  const nextTheme = resolved === 'dark' ? 'light' : 'dark';
+  const nextTheme = resolved.mode === 'dark' ? 'light' : 'dark';
   const iconName = nextTheme === 'light' ? 'light_mode' : 'dark_mode';
   const label = `Switch to ${nextTheme} theme`;
 
@@ -53,14 +49,94 @@ function applyTheme() {
   if (glyph) glyph.innerHTML = icon(iconName);
   themeToggle.setAttribute('aria-label', label);
   themeToggle.title = label;
+
+  const surface = getComputedStyle(root)
+    .getPropertyValue('--md-sys-color-surface')
+    .trim();
+  if (surface) {
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.append(meta);
+    }
+    meta.setAttribute('content', surface);
+  }
 }
 
 function toggleTheme() {
-  const next = resolvedTheme() === 'dark' ? 'light' : 'dark';
-  state.settings.theme = next;
+  const {mode} = resolveTheme(state.settings.theme, lightPreference.matches);
+  const next = mode === 'dark' ? 'light' : 'dark';
+  // normalize() also derives settings.colorMode, which the pre-paint script reads.
+  state.settings = normalize({
+    settings: {...state.settings, theme: next},
+  }).settings;
   saveState(state);
   applyTheme();
 }
+
+const DEFAULT_HERO_ALT =
+  'A person sitting at a desk, petting a cat in front of a computer.';
+
+const heroImage = document.getElementById('hero-image');
+const heroCaption = document.getElementById('hero-caption');
+let heroSrc = 'cat.gif';
+let heroObjectUrl = '';
+let heroToken = 0;
+
+function releaseHeroUrl() {
+  if (!heroObjectUrl) return;
+  URL.revokeObjectURL(heroObjectUrl);
+  heroObjectUrl = '';
+}
+
+function showHero(src, caption, alt) {
+  heroSrc = src;
+  heroImage.alt = alt;
+  heroImage.src = src;
+  heroCaption.textContent = caption;
+}
+
+/** Applies settings.hero: default cat.gif, a linked image, or an upload. */
+async function applyHero() {
+  const token = ++heroToken;
+  const hero = state.settings.hero;
+
+  if (hero.type === 'upload') {
+    const blob = await loadHeroImage();
+    if (token !== heroToken) return;
+    if (blob) {
+      releaseHeroUrl();
+      heroObjectUrl = URL.createObjectURL(blob);
+      showHero(heroObjectUrl, `~/${hero.name || 'artwork'}`, 'Custom artwork');
+      return;
+    }
+  }
+
+  if (hero.type === 'url' && hero.url) {
+    releaseHeroUrl();
+    showHero(hero.url, `~/${hero.name || 'linked image'}`, 'Custom artwork');
+    return;
+  }
+
+  releaseHeroUrl();
+  showHero('cat.gif', '~/cat.gif', DEFAULT_HERO_ALT);
+}
+
+/** Persists an artwork choice and re-renders it immediately. */
+async function setHero(hero) {
+  state.settings = normalize({
+    settings: {...state.settings, hero},
+  }).settings;
+  saveState(state);
+  await applyHero();
+}
+
+heroImage.addEventListener('error', () => {
+  if (heroSrc === 'cat.gif') return;
+  releaseHeroUrl();
+  showHero('cat.gif', '~/cat.gif (image unavailable)', DEFAULT_HERO_ALT);
+});
 
 function pad(value) {
   return String(value).padStart(2, '0');
@@ -139,9 +215,14 @@ const settings = createSettings({
     applyTheme();
     tick();
     renderAll();
+    applyHero();
   },
   confirm,
   toast: (message, options) => snackbar.show(message, options),
+  previewTheme: (theme) => applyTheme(theme),
+  endThemePreview: () => applyTheme(),
+  getHeroSrc: () => heroSrc,
+  onHeroChange: (hero) => setHero(hero),
 });
 
 themeToggle.addEventListener('click', toggleTheme);
@@ -186,6 +267,7 @@ applyTheme();
 tick();
 window.setInterval(tick, 1000);
 renderAll();
+applyHero();
 
 if (window.matchMedia('(pointer: fine)').matches && window.innerWidth >= 900) {
   searchInput.focus({preventScroll: true});

@@ -1,5 +1,7 @@
 import {SEARCH_ENGINES} from './defaults.js';
 import {icon} from './icons.js';
+import {clearHeroImage, saveHeroImage} from './media.js';
+import {THEMES, THEME_GROUPS, BUILTIN_THEMES} from './themes.js';
 import {
   exportState,
   freshState,
@@ -124,7 +126,7 @@ export function createSnackbar(element) {
 }
 
 /**
- * Settings dialog with three sections: bookmarks, appearance and data.
+ * Settings screen with three sections: bookmarks, appearance and data.
  *
  * @param {{
  *   dialog: any,
@@ -133,12 +135,35 @@ export function createSnackbar(element) {
  *   onSave: (state: import('./store.js').StartPageState) => void,
  *   confirm: (options: object) => Promise<boolean>,
  *   toast: (message: string, options?: object) => void,
+ *   previewTheme?: (theme: string) => void,
+ *   endThemePreview?: () => void,
+ *   getHeroSrc?: () => string,
+ *   onHeroChange?: () => Promise<void> | void,
  * }} options
  */
-export function createSettings({dialog, tabs, getState, onSave, confirm, toast}) {
+export function createSettings({
+  dialog,
+  tabs,
+  getState,
+  onSave,
+  confirm,
+  toast,
+  previewTheme,
+  endThemePreview,
+  getHeroSrc,
+  onHeroChange,
+}) {
   const panel = dialog.querySelector('[data-settings-content]');
   const cancelButton = dialog.querySelector('[data-settings-cancel]');
   const saveButton = dialog.querySelector('[data-settings-save]');
+
+  const MAX_HERO_BYTES = 24 * 1024 * 1024;
+
+  const heroFileInput = document.createElement('input');
+  heroFileInput.type = 'file';
+  heroFileInput.accept = 'image/*,.gif';
+  heroFileInput.hidden = true;
+  dialog.append(heroFileInput);
 
   /** @type {import('./store.js').StartPageState | null} */
   let draft = null;
@@ -155,7 +180,8 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
   dataPanel.dataset.panel = '2';
   sections.append(bookmarksPanel, appearancePanel, dataPanel);
 
-  panel.replaceChildren(tabs, sections);
+  // The tab bar stays in the markup; add the scrolling panels below it.
+  panel.append(sections);
 
   const categoriesMount = el('div', 'settings-categories');
   const addCategoryRow = el('div', 'settings-add-row');
@@ -218,6 +244,7 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
 
   dialog.addEventListener('close', () => {
     draft = null;
+    endThemePreview?.();
   });
 
   function syncPanels() {
@@ -387,31 +414,30 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
 
     appearancePanel.append(
       el('h3', 'settings-subhead md-title-small', 'Theme'),
-      el('p', 'settings-hint md-body-small', 'System follows your OS setting.'),
+      el(
+        'p',
+        'settings-hint md-body-small',
+        'The palettes come from the Zenith theme engine and are expanded into Material 3 colour roles. Pick one to preview it, then press Save.',
+      ),
     );
 
-    const themeGroup = el('div', 'settings-choice-group');
-    for (const [value, labelText] of [
-      ['dark', 'Dark'],
-      ['light', 'Light'],
-      ['system', 'System'],
-    ]) {
-      const label = el('label', 'settings-choice');
-      const radio = document.createElement('md-radio');
-      radio.name = 'settings-theme';
-      radio.value = value;
-      radio.checked = draft.settings.theme === value;
-      radio.addEventListener('change', () => {
-        if (!draft || !radio.checked) return;
-        draft.settings.theme = value;
-        for (const item of themeGroup.querySelectorAll('md-radio')) {
-          item.checked = item === radio;
-        }
-      });
-      label.append(radio, el('span', 'md-body-medium', labelText));
-      themeGroup.append(label);
+    const groups = [
+      ['Built-in', BUILTIN_THEMES],
+      ...THEME_GROUPS.map((group) => [
+        group,
+        THEMES.filter((theme) => theme.group === group),
+      ]),
+    ];
+
+    for (const [groupName, entries] of groups) {
+      if (entries.length === 0) continue;
+      const section = el('section', 'theme-section');
+      section.append(el('h4', 'theme-section__title md-label-medium', groupName));
+      const grid = el('div', 'theme-grid');
+      for (const theme of entries) grid.append(themeTile(theme));
+      section.append(grid);
+      appearancePanel.append(section);
     }
-    appearancePanel.append(themeGroup);
 
     appearancePanel.append(
       el('h3', 'settings-subhead md-title-small', 'Search engine'),
@@ -454,7 +480,158 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
     });
     secondsRow.append(seconds, el('span', 'md-body-medium', 'Show seconds'));
     appearancePanel.append(secondsRow);
+
+    appearancePanel.append(
+      el('h3', 'settings-subhead md-title-small', 'Artwork'),
+      el(
+        'p',
+        'settings-hint md-body-small',
+        'Swap the GIF for any image: static or animated. Uploads are stored in this browser and apply right away. Up to 24 MB.',
+      ),
+      renderArtwork(),
+    );
   }
+
+  /** @param {{id: string, name: string, preview?: object, bg?: string, surface?: string, primary?: string, textMain?: string, border?: string}} theme */
+  function themeTile(theme) {
+    const preview = theme.preview ?? {
+      bg: theme.bg,
+      surface: theme.surface,
+      primary: theme.primary,
+      text: theme.textMain,
+      border: theme.border,
+    };
+
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'theme-tile';
+    tile.dataset.themeId = theme.id;
+    tile.setAttribute('aria-pressed', String(draft.settings.theme === theme.id));
+    tile.title = theme.name;
+
+    const swatch = el('span', 'theme-tile__preview');
+    swatch.style.setProperty('--pv-bg', preview.bg);
+    swatch.style.setProperty('--pv-surface', preview.surface);
+    swatch.style.setProperty('--pv-primary', preview.primary);
+    swatch.style.setProperty('--pv-text', preview.text);
+    if (preview.border) swatch.style.setProperty('--pv-border', preview.border);
+    swatch.append(
+      el('span', 'theme-tile__bar'),
+      el('span', 'theme-tile__dot'),
+      el('span', 'theme-tile__dot theme-tile__dot--soft'),
+    );
+
+    const row = el('span', 'theme-tile__row');
+    row.append(el('span', 'theme-tile__name', theme.name));
+    const check = el('md-icon', 'theme-tile__check');
+    check.innerHTML = icon('check', {size: 18});
+    check.setAttribute('aria-hidden', 'true');
+    row.append(check);
+
+    tile.append(swatch, row);
+    tile.addEventListener('click', () => {
+      if (!draft) return;
+      draft.settings.theme = theme.id;
+      for (const other of appearancePanel.querySelectorAll('.theme-tile')) {
+        other.setAttribute(
+          'aria-pressed',
+          String(other.dataset.themeId === theme.id),
+        );
+      }
+      previewTheme?.(theme.id);
+    });
+
+    return tile;
+  }
+
+  function renderArtwork() {
+    const hero = getState().settings.hero;
+    const wrap = el('div', 'artwork');
+
+    const preview = el('div', 'artwork__preview');
+    const image = document.createElement('img');
+    image.alt = 'Current artwork';
+    image.src = getHeroSrc?.() ?? 'cat.gif';
+    preview.append(image);
+
+    const body = el('div', 'artwork__body');
+    body.append(el('p', 'artwork__name md-body-small', heroLabel(hero)));
+
+    const actions = el('div', 'artwork__actions');
+    actions.append(
+      textButton('upload', 'Upload image', () => heroFileInput.click()),
+      textButton('restart', 'Use default', () => resetHero()),
+    );
+
+    const urlRow = el('div', 'artwork__url-row');
+    const urlField = document.createElement('md-outlined-text-field');
+    urlField.className = 'artwork__url';
+    urlField.label = 'Image URL';
+    urlField.placeholder = 'https://example.com/art.gif';
+    urlField.value = hero.type === 'url' ? hero.url : '';
+    urlRow.append(
+      urlField,
+      textButton('link', 'Use URL', () => applyHeroUrl(urlField.value)),
+    );
+
+    body.append(actions, urlRow);
+    wrap.append(preview, body);
+    return wrap;
+  }
+
+  function heroLabel(hero) {
+    if (hero.type === 'upload') {
+      return hero.name ? `Uploaded: ${hero.name}` : 'Uploaded image';
+    }
+    if (hero.type === 'url') return `Linked: ${hero.url}`;
+    return 'Default: cat.gif';
+  }
+
+  async function updateHero(hero) {
+    await onHeroChange?.(hero);
+    if (draft) renderAppearance();
+  }
+
+  async function resetHero() {
+    await clearHeroImage();
+    await updateHero({type: 'default', url: '', name: ''});
+    toast('Default artwork restored');
+  }
+
+  function applyHeroUrl(value) {
+    const url = safeUrl(value);
+    if (!url) {
+      toast('Enter a valid image URL');
+      return;
+    }
+    let name = 'linked image';
+    try {
+      name = new URL(url).hostname;
+    } catch {
+      /* keep the generic label */
+    }
+    updateHero({type: 'url', url, name});
+    toast('Artwork updated');
+  }
+
+  heroFileInput.addEventListener('change', async () => {
+    const file = heroFileInput.files?.[0];
+    heroFileInput.value = '';
+    if (!file) return;
+    try {
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Choose an image or GIF file.');
+      }
+      if (file.size > MAX_HERO_BYTES) {
+        throw new Error('Images must be 24 MB or smaller.');
+      }
+      await saveHeroImage(file);
+      await updateHero({type: 'upload', url: '', name: file.name});
+      toast('Artwork updated');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not use that image');
+    }
+  });
 
   function renderData() {
     dataPanel.querySelector('.settings-imported')?.remove();
@@ -491,7 +668,9 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
       if (!shouldImport || !draft) return;
       draft.categories = imported.categories;
       if (imported.settings) {
-        draft.settings = {...draft.settings, ...imported.settings};
+        // Uploaded artwork lives in IndexedDB, so it never travels with JSON.
+        const {hero: _ignored, ...importedSettings} = imported.settings;
+        draft.settings = {...draft.settings, ...importedSettings};
       }
       importedNotice = `Imported ${imported.categories.length} categories. Review them and press Save.`;
       renderCategories();
@@ -536,7 +715,10 @@ export function createSettings({dialog, tabs, getState, onSave, confirm, toast})
         .filter((link) => link.url),
     }));
 
-    const next = normalize({settings: draft.settings, categories});
+    const next = normalize({
+      settings: {...draft.settings, hero: getState().settings.hero},
+      categories,
+    });
     onSave(next);
     dialog.close();
     toast('Settings saved');
